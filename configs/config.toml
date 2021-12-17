@@ -1,0 +1,6 @@
+[logger]
+level = "DEBUG"
+file = "logs/logrus.log"
+
+[devices]
+directory = "../opcuaModbus-Go/deviceopcua"
