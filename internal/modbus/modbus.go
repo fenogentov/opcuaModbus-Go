@@ -31,7 +31,7 @@ const (
 	SlaveDeviceFailure Exception = 0x04
 )
 
-// MBData modbus device register data storage
+// MBData is device ModBus registers data storage
 type MBData struct {
 	RWCoils            *sync.RWMutex
 	RWDiscreteInputs   *sync.RWMutex
@@ -43,7 +43,7 @@ type MBData struct {
 	InputRegisters     map[uint16]uint16
 }
 
-// ModbusResponse structure for sending a Modbus response
+// ModbusResponse is structure for sending a Modbus response
 type ModbusResponse struct {
 	transactionID uint16
 	protocolID    uint16
@@ -53,7 +53,7 @@ type ModbusResponse struct {
 	Data          []byte
 }
 
-// stringToUint8 converting name function ModBus to numeric uint8
+// stringToUint8 is converting name function ModBus to numeric uint8
 func StringToUint8(s string) uint8 {
 	s = strings.TrimSpace(s)
 	s = strings.ToLower(s)

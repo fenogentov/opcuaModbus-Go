@@ -51,6 +51,8 @@ func CfgDevices(logg *logger.Logger, path string) (dvc []clientopcua.DeviceOPCUA
 
 	for _, file := range fnames {
 		fullName := path + "/" + file.Name()
+
+		// read parameters OPC UA
 		srv, err := readDeviceOPCUA(fullName)
 		if err != nil {
 			srv.Error = "Error configuration"
@@ -62,15 +64,18 @@ func CfgDevices(logg *logger.Logger, path string) (dvc []clientopcua.DeviceOPCUA
 		logg.Info("read file " + fullName)
 		logg.Debug(t)
 
+		// read tags OPC UA
 		srv.Nodes, srv.Tags, err = readCSV(fullName, 2, 3, 4, 5)
 		if err != nil {
 			srv.Error = "Error read CSV"
 			logg.Error("error read csv-file " + fullName + ": " + err.Error())
 			continue
 		}
+
 		srv.Status = "CSV read"
 		dvc = append(dvc, srv)
 	}
+
 	return dvc, nil
 }
 

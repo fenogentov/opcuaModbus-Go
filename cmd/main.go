@@ -20,13 +20,6 @@ import (
 	"github.com/gopcua/opcua/ua"
 )
 
-// type service struct {
-// 	MBServer     *modbus.ModbusServer
-// 	OPCUAClients []clientopcua.DeviceOPCUA
-// }
-// var cntC = 1
-// var cntH = 1
-
 type serv struct {
 	MBServer     *modbus.ModbusServer
 	OPCUAClients clientopcua.DeviceOPCUA
@@ -71,6 +64,7 @@ func main() {
 	if err != nil {
 		logg.Error(err.Error())
 	}
+
 	// начальный запуск подписки клиентов opc ua
 	for i := range Services {
 
@@ -100,6 +94,7 @@ func main() {
 			e := fmt.Sprintf("error: sub=%d err=%s", sub.SubscriptionID(), err)
 			logg.Error(e)
 		})
+
 		Serv := &serv{
 			MBServer:     MBServer,
 			OPCUAClients: Services[i],
@@ -108,7 +103,6 @@ func main() {
 	}
 
 	// запуск цикла мониторинга статуса клиентов opc ua
-
 	ticker := time.NewTicker(time.Minute)
 	go func() {
 		for {
@@ -116,6 +110,7 @@ func main() {
 			case <-ctx.Done():
 				ticker.Stop()
 				return
+
 			case <-ticker.C:
 				for i := range Services {
 					fmt.Printf("Status: %s | Error: %s\n", Services[i].Status, Services[i].Error)
@@ -182,12 +177,12 @@ func main() {
 }
 
 func startCallbackSub(ctx context.Context, m *monitor.NodeMonitor, srvc *serv) {
-
 	sub, err := m.Subscribe(
 		ctx,
 		nil,
 		srvc.Hand,
 		srvc.OPCUAClients.Nodes[0])
+
 	if err != nil {
 		fmt.Println(err)
 		srvc.OPCUAClients.Status = "Error Subscribe"
@@ -225,19 +220,23 @@ func (srv *serv) Hand(s *monitor.Subscription, msg *monitor.DataChangeMessage) {
 			return
 		}
 		log.Println("err tag : ", msg.NodeID)
+
 	case modbus.ReadDiscreteInputs:
 		val := msg.Value.Value().(bool)
 		srv.MBServer.WriteDiscreteInputs(unitid, tag.MBaddr, val)
+
 	case modbus.ReadHoldingRegisters:
 		regs := toRegisters(msg.Value.Value())
 		for i, r := range regs {
 			srv.MBServer.WriteHoldingRegisters(unitid, tag.MBaddr+uint16(i), r)
 		}
+
 	case modbus.ReadInputRegisters:
 		regs := toRegisters(msg.Value.Value())
 		for i, r := range regs {
 			srv.MBServer.WriteInputRegisters(unitid, tag.MBaddr+uint16(i), r)
 		}
+
 	default:
 	}
 }

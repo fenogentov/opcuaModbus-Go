@@ -1,8 +1,8 @@
 package modbus
 
 import (
-	"context"
 	"encoding/binary"
+	"fmt"
 	"net"
 	"opcuaModbus/internal/logger"
 	"opcuaModbus/utilities"
@@ -52,18 +52,22 @@ func (server *ModbusServer) AddDevice(id UnitID) {
 	}
 }
 
-func (server *ModbusServer) Listen() (err error) {
+// раскидать listen и accept
+func (server *ModbusServer) Listen() {
 	// server.lock.Lock()
 	// defer server.lock.Unlock()
+	var err error
 
 	url := server.host + ":" + server.Port
 	server.tcpListener, err = net.Listen("tcp", url)
 	if err != nil {
+		fmt.Println(err)
 		server.logg.Error(err.Error())
 		return
 	}
 	server.logg.Debug("modbus server listen")
 	defer server.tcpListener.Close()
+
 	for {
 		sock, err := server.tcpListener.Accept()
 		if err != nil {
@@ -74,7 +78,7 @@ func (server *ModbusServer) Listen() (err error) {
 	}
 }
 
-// handlerMB request handler for ModBus Server
+// handlerMB is request handler for ModBus Server
 func (server *ModbusServer) handlerMB(sock net.Conn) {
 	defer func() {
 		server.logg.Debug("modbus server close socket")
@@ -95,6 +99,11 @@ func (server *ModbusServer) handlerMB(sock net.Conn) {
 		}
 
 		packet = packet[:bytesRead]
+		if len(packet) < 12 || len(packet) > 260 {
+			server.logg.Info("len packet exception : BadPacket")
+			return
+		}
+
 		transactionID := binary.BigEndian.Uint16(packet[0:2])
 		protocolID := binary.BigEndian.Uint16(packet[2:4])
 		unitid := UnitID(packet[6])
@@ -110,11 +119,6 @@ func (server *ModbusServer) handlerMB(sock net.Conn) {
 		}
 
 		exception := Success
-		if len(packet) < 12 || len(packet) > 260 {
-			exception = SlaveDeviceFailure
-			server.logg.Info("len packet exception : SlaveDeviceFailure")
-		}
-
 		if unitid > 247 {
 			exception = SlaveDeviceFailure
 			server.logg.Info("unit id exception : SlaveDeviceFailure")
@@ -165,13 +169,13 @@ func (server *ModbusServer) handlerMB(sock net.Conn) {
 		if exception != Success {
 			response.sendExeption(sock, exception)
 			server.logg.Debug("modbus send exception")
-			return
+			continue
 		}
 		response.sendData(sock)
 	}
 }
 
-// sendExeption create response with ModBus exception on error
+// sendExeption is create response with ModBus exception on error
 func (r *ModbusResponse) sendExeption(sock net.Conn, ex Exception) {
 	bytes := make([]byte, 2)
 	rawBytes := []byte{}
@@ -187,7 +191,7 @@ func (r *ModbusResponse) sendExeption(sock net.Conn, ex Exception) {
 	sock.Write(rawBytes)
 }
 
-// sendData creating a response with data
+// sendData is create response with ModBus data
 func (r *ModbusResponse) sendData(sock net.Conn) {
 	bytes := make([]byte, 2)
 	rawBytes := []byte{}
@@ -209,7 +213,7 @@ func (r *ModbusResponse) sendData(sock net.Conn) {
 // func (resp *ResponseMB)  WriteMultipleCoils
 // func (resp *ResponseMB)  WriteHoldingRegisters
 
-// readCoils reading the Coils data in the ModBus Server to send a response
+// readCoils is read Coils data in ModBus Server & send response
 func (server *ModbusServer) readCoils(r *ModbusResponse, startAddress, quantity uint16) Exception {
 	bts := []byte{}
 	buff := []bool{}
@@ -239,7 +243,7 @@ func (server *ModbusServer) readCoils(r *ModbusResponse, startAddress, quantity 
 	return Success
 }
 
-// readDiscreteInputs reading the Discrete inputs data in the ModBus Server to send a response
+// readDiscreteInputs is read Discrete inputs data in ModBus Server & send response
 func (server *ModbusServer) readDiscreteInputs(r *ModbusResponse, startAddress, quantity uint16) Exception {
 	bts := []byte{}
 	buff := []bool{}
@@ -269,7 +273,7 @@ func (server *ModbusServer) readDiscreteInputs(r *ModbusResponse, startAddress, 
 	return Success
 }
 
-// readDiscreteInputs reading the Holding registers data in the ModBus Server to send a response
+// readDiscreteInputs is read Holding registers data in ModBus Server & send response
 func (server *ModbusServer) readHoldingRegister(r *ModbusResponse, startAddress, quantity uint16) Exception {
 	register := make([]byte, 2)
 	buff := []byte{}
@@ -291,7 +295,7 @@ func (server *ModbusServer) readHoldingRegister(r *ModbusResponse, startAddress,
 	return Success
 }
 
-// readDiscreteInputs reading the Input Registers data in the ModBus Server to send a response
+// readDiscreteInputs is read Input Registers data in ModBus Server & send response
 func (server *ModbusServer) readInputRegisters(r *ModbusResponse, startAddress, quantity uint16) Exception {
 	register := make([]byte, 2)
 	buff := []byte{}
@@ -334,6 +338,7 @@ func (server *ModbusServer) WriteInputRegisters(unitid UnitID, address, value ui
 	server.Devices[unitid].InputRegisters[address] = value
 }
 
+/*
 func (server *ModbusServer) Shutdown(ctx context.Context) error {
 	// srv.inShutdown.setTrue()
 
@@ -382,3 +387,4 @@ func (server *ModbusServer) closeListenersLocked() error {
 	// }
 	return nil
 }
+*/

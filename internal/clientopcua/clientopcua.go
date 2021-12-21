@@ -12,14 +12,14 @@ import (
 	"github.com/gopcua/opcua/ua"
 )
 
-// Tag config for tags device
+// Tag is config for tags device
 type Tag struct {
 	TypeData string
 	MBfunc   uint8
 	MBaddr   uint16
 }
 
-// Config configuration of connection to OPC UA Server
+// Config is configuration of connection to OPC UA Server
 type Config struct {
 	Endpoint string
 	Policy   string
@@ -29,7 +29,7 @@ type Config struct {
 	Password string
 }
 
-// DeviceOPCUA client OPC UA
+// DeviceOPCUA is client OPC UA
 type DeviceOPCUA struct {
 	Status   string
 	Config   Config
@@ -41,7 +41,7 @@ type DeviceOPCUA struct {
 	Error    string
 }
 
-// ClientOptions applying OPC UA Client connection configuration
+// ClientOptions is applying OPC UA Client connection configuration
 func (dvc *DeviceOPCUA) ClientOptions(ctx context.Context, logg *logger.Logger) error {
 	endpoints, err := opcua.GetEndpoints(ctx, dvc.Config.Endpoint)
 	if err != nil {
