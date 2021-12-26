@@ -35,8 +35,6 @@ func main() {
 	flag.BoolVar(&debug.Enable, "debug", false, "enable debug logging")
 	flag.Parse()
 
-	Services := []clientopcua.DeviceOPCUA{}
-
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
@@ -56,10 +54,11 @@ func main() {
 
 	logg := logger.New(config.Logger.File, config.Logger.Level)
 
-	MBServer := modbus.NewServer(logg, "0.0.0.0", "1503")
+	MBServer := modbus.NewServer(logg, "0.0.0.0", "port")
 
 	go MBServer.Listen()
 
+	Services := []clientopcua.DeviceOPCUA{}
 	Services, err = CfgDevices(logg, config.Devices.Directory)
 	if err != nil {
 		logg.Error(err.Error())
@@ -72,12 +71,13 @@ func main() {
 
 		err := Services[i].ClientOptions(ctx, logg)
 		if err != nil {
+			Services[i].Error = "error client options"
 			logg.Error(err.Error())
 		}
 
 		Services[i].Client = opcua.NewClient(Services[i].Config.Endpoint, Services[i].Options...)
 		if err := Services[i].Client.Connect(ctx); err != nil {
-			Services[i].Error = "Failed connect"
+			Services[i].Error = "failed connect"
 			continue
 		}
 		defer Services[i].Client.Close()
@@ -102,8 +102,15 @@ func main() {
 		go startCallbackSub(ctx, m, Serv)
 	}
 
+	// контроль папки с конфигурациями
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		log.Fatalln("wathing the directory with data files: ", err)
+	}
+	defer watcher.Close()
+
 	// запуск цикла мониторинга статуса клиентов opc ua
-	ticker := time.NewTicker(time.Minute)
+	ticker := time.NewTicker(5 * time.Minute)
 	go func() {
 		for {
 			select {
@@ -127,7 +134,7 @@ func main() {
 					if Services[i].Status == "Configuration applied" {
 						Services[i].Client = opcua.NewClient(Services[i].Config.Endpoint, Services[i].Options...)
 						if err := Services[i].Client.Connect(ctx); err != nil {
-							Services[i].Error = "Failed connect"
+							Services[i].Error = "failed connect"
 							continue
 						}
 						defer Services[i].Client.Close()
@@ -135,38 +142,37 @@ func main() {
 						Services[i].ReadTime(ctx)
 					}
 				}
-
-				//case w := <-watcher.Events: // добавлен файл в папке
-
-			}
-
-		}
-	}()
-
-	// контроль папки с конфигурациями
-	watcher, err := fsnotify.NewWatcher()
-	if err != nil {
-		log.Fatalln("wathing the directory with data files: ", err)
-	}
-	defer watcher.Close()
-
-	go func() {
-		for {
-			select {
-			case w := <-watcher.Events:
-				fnames, err := filesNames(config.Devices.Directory)
-				if err != nil {
-					log.Println("error reading file list: ", err)
-					continue
+				for i := range Services {
+					fmt.Println(Services[i].MBUnitID)
 				}
-				// add/del device opc ua
-				fmt.Printf("%+v", w.Op)
-				fmt.Println(fnames)
+			case w := <-watcher.Events:
+				fmt.Printf("%+v\n", w.Op)
+
 			case err := <-watcher.Errors:
-				log.Fatalln("wathing the directory with data files: ", err)
+				logg.Error("wathing the directory with data files: " + err.Error())
+
 			}
+
 		}
 	}()
+
+	// go func() {
+	// 	for {
+	// 		select {
+	// 		case w := <-watcher.Events:
+	// 			fnames, err := filesNames(config.Devices.Directory)
+	// 			if err != nil {
+	// 				log.Println("error reading file list: ", err)
+	// 				continue
+	// 			}
+	// 			// add/del device opc ua
+	// 			fmt.Printf("%+v", w.Op)
+	// 			fmt.Println(fnames)
+	// 		case err := <-watcher.Errors:
+	// 			log.Fatalln("wathing the directory with data files: ", err)
+	// 		}
+	// 	}
+	// }()
 
 	if err := watcher.Add(config.Devices.Directory); err != nil {
 		log.Fatalln("wathing the directory with data files: ", err)
@@ -177,10 +183,11 @@ func main() {
 }
 
 func startCallbackSub(ctx context.Context, m *monitor.NodeMonitor, srvc *serv) {
+	// len(Nodes) == 0 -> return
 	sub, err := m.Subscribe(
 		ctx,
 		nil,
-		srvc.Hand,
+		srvc.handlerOPCUA,
 		srvc.OPCUAClients.Nodes[0])
 
 	if err != nil {
@@ -194,18 +201,18 @@ func startCallbackSub(ctx context.Context, m *monitor.NodeMonitor, srvc *serv) {
 		}()
 	}
 
-	for i := 0; i < len(srvc.OPCUAClients.Nodes); i++ {
+	// i:=1 ???
+	for i := 1; i < len(srvc.OPCUAClients.Nodes); i++ {
 		err = sub.AddNodes(srvc.OPCUAClients.Nodes[i])
 		if err != nil {
 			fmt.Println(srvc.OPCUAClients.Nodes[i], err)
 		}
 	}
 	srvc.OPCUAClients.Status = "Subscribe"
-	fmt.Printf("%+v\n", sub.Subscribed())
 	<-ctx.Done()
 }
 
-func (srv *serv) Hand(s *monitor.Subscription, msg *monitor.DataChangeMessage) {
+func (srv *serv) handlerOPCUA(s *monitor.Subscription, msg *monitor.DataChangeMessage) {
 	if msg.DataValue.Status != ua.StatusOK {
 		log.Printf("[callback] sub=%d errorNodeID=%s", s.SubscriptionID(), msg.NodeID)
 		return
