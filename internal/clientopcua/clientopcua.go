@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"opcuaModbus/internal/logger"
 	"opcuaModbus/internal/modbus"
-	"opcuaModbus/utilities"
+	"opcuaModbus/util"
 	"strings"
 
 	"github.com/gopcua/opcua"
@@ -78,6 +78,7 @@ func (dvc *DeviceOPCUA) ClientOptions(ctx context.Context, logg *logger.Logger) 
 	dvc.Options = append(dvc.Options, opcua.SecurityFromEndpoint(endpnt, authToken))
 
 	dvc.Status = "Configuration applied"
+	dvc.Error = ""
 	return nil
 }
 
@@ -92,16 +93,16 @@ func getOptions(endpoints []*ua.EndpointDescription) (out string) {
 	var user bool
 	for _, e := range endpoints {
 		p := strings.TrimPrefix(e.SecurityPolicyURI, "http://opcfoundation.org/UA/SecurityPolicy#")
-		if !utilities.FindFromSliceString(policy, p) {
+		if !util.FindFromSliceString(policy, p) {
 			policy = append(policy, p)
 		}
 		m := strings.TrimPrefix(e.SecurityMode.String(), "MessageSecurityMode")
-		if !utilities.FindFromSliceString(mode, m) {
+		if !util.FindFromSliceString(mode, m) {
 			mode = append(mode, m)
 		}
 		for _, t := range e.UserIdentityTokens {
 			token := strings.TrimPrefix(t.TokenType.String(), "UserTokenType")
-			if !utilities.FindFromSliceString(auth, token) {
+			if !util.FindFromSliceString(auth, token) {
 				auth = append(auth, token)
 				if token == "UserName" {
 					user = true
@@ -127,7 +128,6 @@ func getOptions(endpoints []*ua.EndpointDescription) (out string) {
 
 // readTime is tests the connection and reads Server's Time
 func (dvc *DeviceOPCUA) ReadTime(ctx context.Context) {
-
 	vl, err := dvc.Client.Node(ua.NewNumericNodeID(0, 2258)).Value()
 	if err != nil {
 		fmt.Println("err : ", err)
@@ -136,6 +136,7 @@ func (dvc *DeviceOPCUA) ReadTime(ctx context.Context) {
 	if vl != nil {
 		fmt.Printf("Server's time: %s\n", vl.Value())
 		dvc.Status = "Connected"
+		dvc.Error = ""
 	} else {
 		fmt.Print("v == nil")
 		dvc.Error = "Failed connect"

@@ -1,5 +1,6 @@
-package utilities
+package util
 
+// SetBit is sets required bit in byte (bits are counted from 0)
 func SetBit(b *byte, i int, val bool) {
 	if val {
 		*b |= 1 << i
@@ -8,6 +9,7 @@ func SetBit(b *byte, i int, val bool) {
 	*b &= ^(1 << i)
 }
 
+// FindFromSliceString is detects presence string in []string
 func FindFromSliceString(sl []string, e string) bool {
 	for _, s := range sl {
 		if s == e {

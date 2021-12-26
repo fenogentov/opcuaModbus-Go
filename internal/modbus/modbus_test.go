@@ -159,7 +159,7 @@ var tReadMBexcept = []struct {
 
 func TestStringToUint8(t *testing.T) {
 	for _, el := range tNameFuncMB {
-		out := StringToUint8(el.in)
+		out := FncToUint8(el.in)
 		if out != el.expect {
 			t.Errorf("%v. Input: \"%v\", want: %v, got: %v", el.msgErr, el.in, el.expect, out)
 		}
@@ -172,13 +172,25 @@ func TestMBServer(t *testing.T) {
 	defer os.Remove(filelogg)
 	var mbserver = NewServer(logg, "", mbPort)
 
-	t.Run("AddDevices", func(t *testing.T) {
+	t.Run("AddDevice", func(t *testing.T) {
 		mbserver.AddDevice(1)
 		mbserver.AddDevice(2)
 		mbserver.AddDevice(3)
 		mbserver.AddDevice(4)
+		mbserver.AddDevice(5)
+		if len(mbserver.Devices) != 5 {
+			t.Errorf("error adding device to ModBus Server structure")
+		}
+	})
+	t.Run("DeleteDevice", func(t *testing.T) {
+		mbserver.DeletDevice(5)
+		_, fl := mbserver.Devices[5]
+		if len(mbserver.Devices) != 4 || fl {
+			t.Errorf("error deleting  device from ModBus Server structure")
+		}
+		mbserver.DeletDevice(5)
 		if len(mbserver.Devices) != 4 {
-			t.Errorf("error adding a device to the ModBus Server structure")
+			t.Errorf("error deleting  device from ModBus Server structure")
 		}
 	})
 	t.Run("Listen", func(t *testing.T) {

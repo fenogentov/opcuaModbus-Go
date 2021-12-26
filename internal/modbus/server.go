@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"net"
 	"opcuaModbus/internal/logger"
-	"opcuaModbus/utilities"
+	"opcuaModbus/util"
 	"sync"
 	"time"
 )
@@ -25,7 +25,7 @@ func NewServer(logg *logger.Logger, host, port string) *ModbusServer {
 	if host == "" {
 		host = "0.0.0.0"
 	}
-	logg.Info("new modbus server: " + port)
+	logg.Debug("new modbus server: " + port)
 	return &ModbusServer{
 		host:        host,
 		Port:        port,
@@ -50,6 +50,16 @@ func (server *ModbusServer) AddDevice(id UnitID) {
 		HoldingRegisters:   map[uint16]uint16{},
 		InputRegisters:     map[uint16]uint16{},
 	}
+	server.logg.Debug("modbus server add device: " + string(int(id)))
+}
+
+// AddDevice adding a device with a given modbus address to the modbus server
+func (server *ModbusServer) DeletDevice(id UnitID) {
+	if _, ok := server.Devices[id]; !ok {
+		return
+	}
+	delete(server.Devices, id)
+	server.logg.Debug("modbus server delete device: " + string(id))
 }
 
 // раскидать listen и accept
@@ -168,7 +178,7 @@ func (server *ModbusServer) handlerMB(sock net.Conn) {
 		}
 		if exception != Success {
 			response.sendExeption(sock, exception)
-			server.logg.Debug("modbus send exception")
+			server.logg.Debug("modbus send exception" + string(exception))
 			continue
 		}
 		response.sendData(sock)
@@ -233,7 +243,7 @@ func (server *ModbusServer) readCoils(r *ModbusResponse, startAddress, quantity 
 	for i := 0; i < len(buff); i += 8 {
 		var b byte
 		for j := 0; j < 8 && (i+j) < len(buff); j++ {
-			utilities.SetBit(&b, j, buff[i])
+			util.SetBit(&b, j, buff[i])
 		}
 		bts = append(bts, b)
 	}
@@ -263,7 +273,7 @@ func (server *ModbusServer) readDiscreteInputs(r *ModbusResponse, startAddress, 
 	for i := 0; i < len(buff); i += 8 {
 		var b byte
 		for j := 0; j < 8 && (i+j) < len(buff); j++ {
-			utilities.SetBit(&b, j, buff[i])
+			util.SetBit(&b, j, buff[i])
 		}
 		bts = append(bts, b)
 	}

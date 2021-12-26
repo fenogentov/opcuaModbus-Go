@@ -55,25 +55,28 @@ func CfgDevices(logg *logger.Logger, path string) (dvc []clientopcua.DeviceOPCUA
 		// read parameters OPC UA
 		srv, err := readDeviceOPCUA(fullName)
 		if err != nil {
-			srv.Error = "Error configuration"
+			srv.Error = "error configuration file"
 			logg.Error("error read parameters file " + fullName + ": " + err.Error())
 			continue
 		}
-		srv.Status = "Configuration read"
+
 		t := fmt.Sprintf("Config: %+v", srv.Config)
-		logg.Info("read file " + fullName)
+		logg.Info("readed config file " + fullName)
 		logg.Debug(t)
 
 		// read tags OPC UA
 		srv.Nodes, srv.Tags, err = readCSV(fullName, 2, 3, 4, 5)
 		if err != nil {
-			srv.Error = "Error read CSV"
+			srv.Error = "error read CSV"
 			logg.Error("error read csv-file " + fullName + ": " + err.Error())
 			continue
 		}
 
-		srv.Status = "CSV read"
+		logg.Info("readed csv-file " + fullName)
+
 		dvc = append(dvc, srv)
+		srv.Status = "Config/CSV readed"
+		srv.Error = ""
 	}
 
 	return dvc, nil
@@ -128,8 +131,6 @@ func readDeviceOPCUA(filename string) (dvc clientopcua.DeviceOPCUA, err error) {
 				dvc.Config.Username = strings.TrimSpace(sl[1])
 			case strings.Contains(p, "pass"):
 				dvc.Config.Password = strings.TrimSpace(sl[1])
-			// case strings.Contains(p, "port"):
-			// 	devMB.Port = sl[1]
 			case strings.Contains(p, "unitid"):
 				sl[1] = strings.TrimSpace(sl[1])
 				id, err := strconv.Atoi(sl[1])
@@ -197,7 +198,7 @@ func readCSV(filename string, arg ...int) (nodes []string, tags map[string]clien
 		tg := clientopcua.Tag{}
 		name := r[arg[0]]
 		tg.TypeData = r[arg[1]]
-		tg.MBfunc = modbus.StringToUint8(r[arg[2]])
+		tg.MBfunc = modbus.FncToUint8(r[arg[2]])
 		a, err := strconv.Atoi(r[arg[3]])
 		if err != nil {
 			fmt.Println(err)

@@ -54,7 +54,7 @@ type ModbusResponse struct {
 }
 
 // stringToUint8 is converting name function ModBus to numeric uint8
-func StringToUint8(s string) uint8 {
+func FncToUint8(s string) uint8 {
 	s = strings.TrimSpace(s)
 	s = strings.ToLower(s)
 	switch {
