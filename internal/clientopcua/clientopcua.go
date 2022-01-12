@@ -2,14 +2,29 @@ package clientopcua
 
 import (
 	"context"
+	"encoding/csv"
+	"errors"
 	"fmt"
 	"opcuaModbus/internal/logger"
 	"opcuaModbus/internal/modbus"
 	"opcuaModbus/utilities"
+	"os"
+	"strconv"
 	"strings"
 
 	"github.com/gopcua/opcua"
+	"github.com/gopcua/opcua/monitor"
 	"github.com/gopcua/opcua/ua"
+)
+
+type Status int
+
+const (
+	Configured Status = iota + 1
+	ReadTags
+	ReadyOptions
+	Connected
+	Subscribed
 )
 
 // Tag is config for tags device
@@ -31,14 +46,18 @@ type Config struct {
 
 // DeviceOPCUA is client OPC UA
 type DeviceOPCUA struct {
-	Status   string
+	Status   Status
 	Config   Config
 	Client   *opcua.Client
 	Options  []opcua.Option
+	client   *opcua.Client
+	Monitor  *monitor.NodeMonitor
+	Subscrip *monitor.Subscription
 	Nodes    []string
 	Tags     map[string]Tag
 	MBUnitID modbus.UnitID
 	Error    string
+	FileTags string
 }
 
 // ClientOptions is applying OPC UA Client connection configuration
@@ -50,7 +69,6 @@ func (dvc *DeviceOPCUA) ClientOptions(ctx context.Context, logg *logger.Logger) 
 
 	endpnt := opcua.SelectEndpoint(endpoints, dvc.Config.Policy, ua.MessageSecurityModeFromString(dvc.Config.Mode))
 	if endpnt == nil {
-		fmt.Println("Failed to find suitable endpoint")
 		recordEnpointParam(endpoints)
 	}
 
@@ -77,7 +95,7 @@ func (dvc *DeviceOPCUA) ClientOptions(ctx context.Context, logg *logger.Logger) 
 	}
 	dvc.Options = append(dvc.Options, opcua.SecurityFromEndpoint(endpnt, authToken))
 
-	dvc.Status = "Configuration applied"
+	dvc.Status = ReadyOptions
 	return nil
 }
 
@@ -135,9 +153,54 @@ func (dvc *DeviceOPCUA) ReadTime(ctx context.Context) {
 	}
 	if vl != nil {
 		fmt.Printf("Server's time: %s\n", vl.Value())
-		dvc.Status = "Connected"
+		dvc.Status = Connected
 	} else {
 		fmt.Print("v == nil")
 		dvc.Error = "Failed connect"
 	}
+}
+
+func (dvc *DeviceOPCUA) ReadTagsTSV() error {
+	file, err := os.Open(dvc.FileTags)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	reader := csv.NewReader(file)
+	reader.Comma = '\t'
+	reader.Comment = '#'
+
+	records, err := reader.ReadAll()
+	if err != nil {
+		return err
+	}
+
+	tags := make(map[string]Tag)
+	nodes := []string{}
+	for _, r := range records {
+		if len(r) != 6 {
+			continue
+		}
+		tg := Tag{}
+		name := r[2]
+		tg.TypeData = r[3]
+		tg.MBfunc = modbus.StringToUint8(r[4])
+		a, err := strconv.Atoi(r[5])
+		if err != nil {
+			continue
+		}
+		tg.MBaddr = uint16(a)
+		nodes = append(nodes, name)
+		tags[name] = tg
+	}
+	if len(nodes) == 0 || len(tags) == 0 {
+		return errors.New("empty data tsv")
+	}
+
+	dvc.Nodes = append(dvc.Nodes, nodes...)
+	dvc.Tags = tags
+	dvc.Status = ReadTags
+
+	return nil
 }

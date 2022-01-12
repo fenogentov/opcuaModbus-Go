@@ -19,14 +19,14 @@ func New(file, level string) *Logger {
 	if err == nil {
 		logg.SetOutput(f)
 	} else {
-		logg.Info("Failed to log to file, using default stderr: ", err)
+		logg.Info("failed to log to file, using default stderr: ", err)
 	}
 
 	lvl, err := logrus.ParseLevel(level)
 	if err == nil {
 		logg.SetLevel(lvl)
 	} else {
-		logg.Info("Failed parse level logger", err)
+		logg.Info("failed parse level logger: ", err)
 		logg.SetLevel(logrus.DebugLevel)
 	}
 
@@ -34,8 +34,10 @@ func New(file, level string) *Logger {
 		FullTimestamp:   true,
 		TimestampFormat: "01/02 15:04:05",
 		DisableColors:   true,
-		PadLevelText:    true,
+		//		PadLevelText:    true,
+		DisableSorting: true,
 	})
+
 	logg.Debug("start log")
 	return &Logger{logger: logg}
 }

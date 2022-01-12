@@ -6,6 +6,7 @@ import (
 	"net"
 	"opcuaModbus/internal/logger"
 	"opcuaModbus/utilities"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -21,14 +22,15 @@ type ModbusServer struct {
 }
 
 // NewServer creating a new modbus server
-func NewServer(logg *logger.Logger, host, port string) *ModbusServer {
+func NewServer(logg *logger.Logger, host string, port int) *ModbusServer {
 	if host == "" {
 		host = "0.0.0.0"
 	}
-	logg.Info("new modbus server: " + port)
+	prt := strconv.Itoa(port)
+	logg.Info("new modbus server: " + prt)
 	return &ModbusServer{
 		host:        host,
-		Port:        port,
+		Port:        prt,
 		IdleTimeout: 30 * time.Second,
 		Devices:     make(map[UnitID]MBData),
 		logg:        logg,
@@ -168,7 +170,7 @@ func (server *ModbusServer) handlerMB(sock net.Conn) {
 		}
 		if exception != Success {
 			response.sendExeption(sock, exception)
-			server.logg.Debug("modbus send exception")
+			//			server.logg.Debug("modbus send exception")
 			continue
 		}
 		response.sendData(sock)

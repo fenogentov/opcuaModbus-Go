@@ -13,104 +13,55 @@ import (
 	"os/signal"
 	"time"
 
-	"github.com/fsnotify/fsnotify"
 	"github.com/gopcua/opcua"
-	"github.com/gopcua/opcua/debug"
 	"github.com/gopcua/opcua/monitor"
-	"github.com/gopcua/opcua/ua"
+
+	"net/http"
+	_ "net/http/pprof"
 )
 
 type serv struct {
 	MBServer     *modbus.ModbusServer
-	OPCUAClients clientopcua.DeviceOPCUA
+	OPCUAClients *clientopcua.DeviceOPCUA
 }
 
 var configFile string
 
 func init() {
-	flag.StringVar(&configFile, "config", "../opcuaModbus-Go/configs/config.toml", "path to configuration file")
+	flag.StringVar(&configFile, "config", "./configs/config.toml", "path to configuration file")
 }
 
 func main() {
-	flag.BoolVar(&debug.Enable, "debug", false, "enable debug logging")
 	flag.Parse()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
-	// go func() {
-	// 	<-ctx.Done()
-	// 	stop()
-	// 	log.Println(" shutdown signal received")
-	// 	ctxTimeout, _ := context.WithTimeout(context.Background(), 5*time.Second)
-	// 	<-ctxTimeout.Done()
-	// 	log.Println(" stop ")
-	// }()
-
 	config, err := NewConfig(configFile)
 	if err != nil {
-		log.Fatalf("can't get config > %v", err)
+		log.Fatalf("can't get config: %v", err)
 	}
 
 	logg := logger.New(config.Logger.File, config.Logger.Level)
 
-	MBServer := modbus.NewServer(logg, "0.0.0.0", "port")
+	MBServer := modbus.NewServer(logg, config.Modbus.Host, config.Modbus.Port)
 
 	go MBServer.Listen()
 
-	Services := []clientopcua.DeviceOPCUA{}
-	Services, err = CfgDevices(logg, config.Devices.Directory)
-	if err != nil {
-		logg.Error(err.Error())
+	PLCs := []clientopcua.DeviceOPCUA{}
+
+	PLCs = readConfPlcs(config.Devices.Directory)
+	if len(PLCs) < 1 {
+		logg.Error("plc list is empty")
+		return
 	}
 
-	// начальный запуск подписки клиентов opc ua
-	for i := range Services {
-
-		MBServer.AddDevice(Services[i].MBUnitID)
-
-		err := Services[i].ClientOptions(ctx, logg)
-		if err != nil {
-			Services[i].Error = "error client options"
-			logg.Error(err.Error())
-		}
-
-		Services[i].Client = opcua.NewClient(Services[i].Config.Endpoint, Services[i].Options...)
-		if err := Services[i].Client.Connect(ctx); err != nil {
-			Services[i].Error = "failed connect"
-			continue
-		}
-		defer Services[i].Client.Close()
-
-		Services[i].ReadTime(ctx)
-
-		m, err := monitor.NewNodeMonitor(Services[i].Client)
-		if err != nil {
-			fmt.Println("err", err)
-			continue
-		}
-
-		m.SetErrorHandler(func(c *opcua.Client, sub *monitor.Subscription, err error) {
-			e := fmt.Sprintf("error: sub=%d err=%s", sub.SubscriptionID(), err)
-			logg.Error(e)
-		})
-
-		Serv := &serv{
-			MBServer:     MBServer,
-			OPCUAClients: Services[i],
-		}
-		go startCallbackSub(ctx, m, Serv)
+	for i := range PLCs {
+		MBServer.AddDevice(PLCs[i].MBUnitID)
 	}
-
-	// контроль папки с конфигурациями
-	watcher, err := fsnotify.NewWatcher()
-	if err != nil {
-		log.Fatalln("wathing the directory with data files: ", err)
-	}
-	defer watcher.Close()
 
 	// запуск цикла мониторинга статуса клиентов opc ua
-	ticker := time.NewTicker(5 * time.Minute)
+	ticker := time.NewTicker(10 * time.Minute)
 	go func() {
 		for {
 			select {
@@ -119,127 +70,139 @@ func main() {
 				return
 
 			case <-ticker.C:
-				for i := range Services {
-					fmt.Printf("Status: %s | Error: %s\n", Services[i].Status, Services[i].Error)
-
-					if Services[i].Status == "CSV read" {
-						MBServer.AddDevice(Services[i].MBUnitID)
-
-						err := Services[i].ClientOptions(ctx, logg)
+				for i := range PLCs {
+					if PLCs[i].Status == clientopcua.Configured {
+						err := PLCs[i].ReadTagsTSV()
 						if err != nil {
+							PLCs[i].Error = err.Error()
+						}
+						logg.Debug(PLCs[i].Config.Endpoint + " " + string(PLCs[i].Status))
+					}
+					if PLCs[i].Status == clientopcua.ReadTags {
+						err := PLCs[i].ClientOptions(ctx, logg)
+						if err != nil {
+							PLCs[i].Error = "error options"
 							logg.Error(err.Error())
 						}
+						logg.Debug(PLCs[i].Config.Endpoint + " " + string(PLCs[i].Status))
 					}
-
-					if Services[i].Status == "Configuration applied" {
-						Services[i].Client = opcua.NewClient(Services[i].Config.Endpoint, Services[i].Options...)
-						if err := Services[i].Client.Connect(ctx); err != nil {
-							Services[i].Error = "failed connect"
+					if PLCs[i].Status == clientopcua.ReadyOptions {
+						client := opcua.NewClient(PLCs[i].Config.Endpoint, PLCs[i].Options...)
+						PLCs[i].Client = client
+						if err := PLCs[i].Client.Connect(ctx); err != nil {
+							PLCs[i].Error = "failed connect"
 							continue
 						}
-						defer Services[i].Client.Close()
-
-						Services[i].ReadTime(ctx)
+						defer PLCs[i].Client.Close()
+						PLCs[i].Status = clientopcua.Connected
+						logg.Debug(PLCs[i].Config.Endpoint + " " + string(PLCs[i].Status))
+						PLCs[i].ReadTime(ctx)
 					}
-				}
-				for i := range Services {
-					fmt.Println(Services[i].MBUnitID)
-				}
-			case w := <-watcher.Events:
-				fmt.Printf("%+v\n", w.Op)
+					if PLCs[i].Status == clientopcua.Connected {
+						mntr, err := monitor.NewNodeMonitor(PLCs[i].Client)
+						PLCs[i].Monitor = mntr
+						if err != nil {
+							logg.Error("monitor: " + err.Error())
+							continue
+						}
 
-			case err := <-watcher.Errors:
-				logg.Error("wathing the directory with data files: " + err.Error())
+						PLCs[i].Monitor.SetErrorHandler(func(c *opcua.Client, sub *monitor.Subscription, err error) {
+							e := fmt.Sprintf("error: sub=%d err=%s", sub.SubscriptionID(), err)
+							logg.Error(e)
+						})
 
+						Serv := &serv{
+							MBServer:     MBServer,
+							OPCUAClients: &PLCs[i],
+						}
+						go startCallbackSub(ctx, Serv)
+					}
+
+					if PLCs[i].Subscrip != nil {
+						logg.Debug(PLCs[i].Config.Endpoint + " subscribed " + string(PLCs[i].Subscrip.Subscribed()) + "tags")
+					}
+
+					logg.Debug(PLCs[i].Config.Endpoint + " status:" + string(PLCs[i].Status) + "/ error:" + PLCs[i].Error)
+				}
 			}
-
 		}
 	}()
 
-	// go func() {
-	// 	for {
-	// 		select {
-	// 		case w := <-watcher.Events:
-	// 			fnames, err := filesNames(config.Devices.Directory)
-	// 			if err != nil {
-	// 				log.Println("error reading file list: ", err)
-	// 				continue
-	// 			}
-	// 			// add/del device opc ua
-	// 			fmt.Printf("%+v", w.Op)
-	// 			fmt.Println(fnames)
-	// 		case err := <-watcher.Errors:
-	// 			log.Fatalln("wathing the directory with data files: ", err)
-	// 		}
-	// 	}
-	// }()
-
-	if err := watcher.Add(config.Devices.Directory); err != nil {
-		log.Fatalln("wathing the directory with data files: ", err)
-	}
-	// ------------------------------------------
+	go func() {
+		log.Println(http.ListenAndServe("localhost:6060", nil))
+	}()
 
 	<-ctx.Done()
 }
 
-func startCallbackSub(ctx context.Context, m *monitor.NodeMonitor, srvc *serv) {
-	// len(Nodes) == 0 -> return
-	sub, err := m.Subscribe(
+func startCallbackSub(ctx context.Context, srvc *serv) {
+	if len(srvc.OPCUAClients.Nodes) < 1 {
+		return
+	}
+
+	sub, err := srvc.OPCUAClients.Monitor.Subscribe(
 		ctx,
-		nil,
+		&opcua.SubscriptionParameters{
+			Interval: 3 * time.Second,
+		},
 		srvc.handlerOPCUA,
 		srvc.OPCUAClients.Nodes[0])
+	srvc.OPCUAClients.Subscrip = sub
 
 	if err != nil {
-		fmt.Println(err)
-		srvc.OPCUAClients.Status = "Error Subscribe"
+		srvc.OPCUAClients.Error = "Error Subscribe"
+		return
 	} else {
 		go func() {
 			<-ctx.Done()
 			sub.Unsubscribe(ctx)
-			srvc.OPCUAClients.Status = "Unsubscribe"
+			srvc.OPCUAClients.Status = clientopcua.ReadyOptions
 		}()
 	}
-
-	// i:=1 ???
+	cnt := 0
 	for i := 1; i < len(srvc.OPCUAClients.Nodes); i++ {
 		err = sub.AddNodes(srvc.OPCUAClients.Nodes[i])
 		if err != nil {
-			fmt.Println(srvc.OPCUAClients.Nodes[i], err)
+			fmt.Printf("add: %+v | %s\n", srvc.OPCUAClients.Nodes[i], err)
 		}
+		cnt++
 	}
-	srvc.OPCUAClients.Status = "Subscribe"
+	srvc.OPCUAClients.Status = clientopcua.Subscribed
 	<-ctx.Done()
 }
 
 func (srv *serv) handlerOPCUA(s *monitor.Subscription, msg *monitor.DataChangeMessage) {
-	if msg.DataValue.Status != ua.StatusOK {
-		log.Printf("[callback] sub=%d errorNodeID=%s", s.SubscriptionID(), msg.NodeID)
-		return
-	}
+	// if msg.DataValue.Status != ua.StatusOK {
+	// 	log.Printf("[callback] errorNodeID=%s, Status=%+v, val=%v\n", msg.NodeID, msg.DataValue, msg.Value)
+	// 	return
+	// }
 	unitid := srv.OPCUAClients.MBUnitID
 	tag := srv.OPCUAClients.Tags[msg.NodeID.String()]
+	val := msg.Value.Value()
 
 	switch tag.MBfunc {
 	case modbus.ReadCoils:
-		if val, ok := msg.Value.Value().(bool); ok {
-			srv.MBServer.WriteCoils(unitid, tag.MBaddr, val)
+		if v, ok := val.(bool); ok {
+			srv.MBServer.WriteCoils(unitid, tag.MBaddr, v)
 			return
 		}
 		log.Println("err tag : ", msg.NodeID)
 
 	case modbus.ReadDiscreteInputs:
-		val := msg.Value.Value().(bool)
-		srv.MBServer.WriteDiscreteInputs(unitid, tag.MBaddr, val)
+		if v, ok := val.(bool); ok {
+			srv.MBServer.WriteDiscreteInputs(unitid, tag.MBaddr, v)
+			return
+		}
+		log.Println("err tag : ", msg.NodeID)
 
 	case modbus.ReadHoldingRegisters:
-		regs := toRegisters(msg.Value.Value())
+		regs := toRegisters(val)
 		for i, r := range regs {
 			srv.MBServer.WriteHoldingRegisters(unitid, tag.MBaddr+uint16(i), r)
 		}
 
 	case modbus.ReadInputRegisters:
-		regs := toRegisters(msg.Value.Value())
+		regs := toRegisters(val)
 		for i, r := range regs {
 			srv.MBServer.WriteInputRegisters(unitid, tag.MBaddr+uint16(i), r)
 		}

@@ -3,4 +3,9 @@ level = "DEBUG"
 file = "logs/logrus.log"
 
 [devices]
-directory = "../opcuaModbus-Go/deviceopcua"
+directory = "./confPLC"
+
+[modbus]
+host = ""
+port = 1502
+

@@ -7,12 +7,13 @@ import (
 	"net"
 	"opcuaModbus/internal/logger"
 	"os"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
 )
 
-var mbPort = "1508"
+var mbPort = 1508
 var filelogg = "logtst.log"
 
 var tNameFuncMB = []struct {
@@ -185,7 +186,8 @@ func TestMBServer(t *testing.T) {
 		go mbserver.Listen()
 		t1 := time.NewTimer(50 * time.Millisecond)
 		<-t1.C
-		client, err := net.Dial("tcp", "127.0.0.1:"+mbPort)
+		prt := strconv.Itoa(mbPort)
+		client, err := net.Dial("tcp", "127.0.0.1:"+prt)
 		if err != nil {
 			t.Error("failed connect to Test ModBus Server: ", err)
 		}
@@ -240,7 +242,8 @@ func TestMBServer(t *testing.T) {
 		for _, mb := range tReadMBok {
 			wg.Add(1)
 			go func(mb ReadModbus) {
-				client, err := net.Dial("tcp", "127.0.0.1:"+mbPort)
+				prt := strconv.Itoa(mbPort)
+				client, err := net.Dial("tcp", "127.0.0.1:"+prt)
 				t1 := time.NewTimer(50 * time.Millisecond)
 				<-t1.C
 				if err != nil {
@@ -269,7 +272,8 @@ func TestMBServer(t *testing.T) {
 	t.Run("ModbusException", func(t *testing.T) {
 
 		for _, mb := range tReadMBexcept {
-			client, err := net.Dial("tcp", "127.0.0.1:"+mbPort)
+			prt := strconv.Itoa(mbPort)
+			client, err := net.Dial("tcp", "127.0.0.1:"+prt)
 			t1 := time.NewTimer(50 * time.Millisecond)
 			<-t1.C
 			if err != nil {
