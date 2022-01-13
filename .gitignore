@@ -4,13 +4,10 @@
 *.exe~
 *.dll
 *.so
-*.dylib
-go-cp
-go-envdir
-go-telnet
 
 #Config
 *.csv
+*.tsv
 
 #Cert
 *.pem
@@ -25,13 +22,6 @@ go-telnet
 *.out
 
 ### User defined
-.idea/
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
 Thumbs.db
 .vscode/
 *.bak
