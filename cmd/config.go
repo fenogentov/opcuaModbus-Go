@@ -2,9 +2,7 @@ package main
 
 import (
 	"encoding/csv"
-	"fmt"
 	"opcuaModbus/internal/clientopcua"
-	"opcuaModbus/internal/logger"
 	"opcuaModbus/internal/modbus"
 	"os"
 	"strconv"
@@ -30,13 +28,13 @@ type DevicesConf struct {
 	Directory string
 }
 
-// DevicesConf ...
+// ModbusConf ...
 type ModbusConf struct {
 	Host string
 	Port int
 }
 
-// NewConfig parsing config file.
+// NewConfig is parsing config file.
 func NewConfig(path string) (conf Config, err error) {
 	if _, err := toml.DecodeFile(path, &conf); err != nil {
 		return Config{}, err
@@ -44,30 +42,11 @@ func NewConfig(path string) (conf Config, err error) {
 	return conf, nil
 }
 
-func CfgPLCs(logg *logger.Logger, path string) (plcs []clientopcua.DeviceOPCUA, err error) {
-
-	plcs = readConfPlcs(path)
-	if len(plcs) < 1 {
-		logg.Error("plc list is empty")
-		return nil, fmt.Errorf("error plc list is empty")
-	}
-
-	for i := range plcs {
-		err := plcs[i].ReadTagsTSV()
-		if err != nil {
-			plcs[i].Error = err.Error()
-		}
-		logg.Debug("read config " + plcs[i].Config.Endpoint)
-	}
-
-	return plcs, nil
-}
-
-// readConfPlcs
-func readConfPlcs(path string) (Plcs []clientopcua.DeviceOPCUA) {
+// readConfPlcs is reads PLCs config from tsv-file
+func readConfPlcs(path string) (Plcs []clientopcua.DeviceOPCUA, err error) {
 	file, err := os.Open(path + "/plc.tsv")
 	if err != nil {
-		return
+		return nil, err
 	}
 	defer file.Close()
 
@@ -107,17 +86,17 @@ func readConfPlcs(path string) (Plcs []clientopcua.DeviceOPCUA) {
 
 		Plcs = append(Plcs, plc)
 	}
-	return Plcs
+	return Plcs, nil
 }
 
-// unitID
+// unitID is converts to type modbus.UnitID
 func unitID(u string) modbus.UnitID {
 	u = strings.TrimSpace(u)
 	id, _ := strconv.Atoi(u)
 	return modbus.UnitID(id)
 }
 
-// correctPolicy correcting string Security Policy OPC UA
+// correctPolicy is correcting string Security Policy OPC UA
 func correctPolicy(p string) string {
 	p = strings.TrimSpace(p)
 	switch strings.ToLower(p) {
@@ -136,7 +115,7 @@ func correctPolicy(p string) string {
 	}
 }
 
-// correctMode correcting string Security Mode OPC UA
+// correctMode is correcting string Security Mode OPC UA
 func correctMode(m string) string {
 	m = strings.TrimSpace(m)
 	switch strings.ToLower(m) {
@@ -149,7 +128,7 @@ func correctMode(m string) string {
 	}
 }
 
-// correctAuth correcting string Mode Authorization OPC UA
+// correctAuth is correcting string Authorization Mode OPC UA
 func correctAuth(a string) string {
 	a = strings.TrimSpace(a)
 	switch strings.ToLower(a) {

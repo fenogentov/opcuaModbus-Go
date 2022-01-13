@@ -2,33 +2,33 @@ package modbus
 
 import (
 	"encoding/binary"
-	"fmt"
 	"net"
-	"opcuaModbus/internal/logger"
 	"opcuaModbus/utilities"
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/sirupsen/logrus"
 )
 
-// ModbusServer ...
-type ModbusServer struct {
+// MBServer ..
+type MBServer struct {
 	host        string
 	Port        string
 	IdleTimeout time.Duration
 	tcpListener net.Listener
 	Devices     map[UnitID]MBData
-	logg        *logger.Logger
+	logg        *logrus.Logger
 }
 
 // NewServer creating a new modbus server
-func NewServer(logg *logger.Logger, host string, port int) *ModbusServer {
+func NewServer(logg *logrus.Logger, host string, port int) *MBServer {
 	if host == "" {
 		host = "0.0.0.0"
 	}
 	prt := strconv.Itoa(port)
-	logg.Info("new modbus server: " + prt)
-	return &ModbusServer{
+
+	return &MBServer{
 		host:        host,
 		Port:        prt,
 		IdleTimeout: 30 * time.Second,
@@ -38,7 +38,7 @@ func NewServer(logg *logger.Logger, host string, port int) *ModbusServer {
 }
 
 // AddDevice adding a device with a given modbus address to the modbus server
-func (server *ModbusServer) AddDevice(id UnitID) {
+func (server *MBServer) AddDevice(id UnitID) {
 	if _, ok := server.Devices[id]; ok {
 		return
 	}
@@ -52,28 +52,26 @@ func (server *ModbusServer) AddDevice(id UnitID) {
 		HoldingRegisters:   map[uint16]uint16{},
 		InputRegisters:     map[uint16]uint16{},
 	}
+	server.logg.Info("modbus server add unit: ", id)
 }
 
 // раскидать listen и accept
-func (server *ModbusServer) Listen() {
-	// server.lock.Lock()
-	// defer server.lock.Unlock()
+func (server *MBServer) Listen() {
 	var err error
 
 	url := server.host + ":" + server.Port
 	server.tcpListener, err = net.Listen("tcp", url)
 	if err != nil {
-		fmt.Println(err)
 		server.logg.Error(err.Error())
 		return
 	}
-	server.logg.Debug("modbus server listen")
+	server.logg.Info("modbus server listen: ", url)
 	defer server.tcpListener.Close()
 
 	for {
 		sock, err := server.tcpListener.Accept()
 		if err != nil {
-			server.logg.Error("failed to accept client connection: " + err.Error())
+			server.logg.Error("failed to accept client connection: ", err)
 			continue
 		}
 		go server.handlerMB(sock)
@@ -81,9 +79,9 @@ func (server *ModbusServer) Listen() {
 }
 
 // handlerMB is request handler for ModBus Server
-func (server *ModbusServer) handlerMB(sock net.Conn) {
+func (server *MBServer) handlerMB(sock net.Conn) {
 	defer func() {
-		server.logg.Debug("modbus server close socket")
+		server.logg.Debug("modbus server close socket: ", sock.RemoteAddr())
 		sock.Close()
 	}()
 
@@ -91,18 +89,18 @@ func (server *ModbusServer) handlerMB(sock net.Conn) {
 		packet := make([]byte, 512)
 		bytesRead, err := sock.Read(packet)
 		if err != nil {
-			server.logg.Error("read error: " + err.Error())
+			server.logg.Error("socket read error: ", err, " / ", sock.RemoteAddr())
 			return
 		}
 		err = sock.SetDeadline(time.Now().Add(server.IdleTimeout))
 		if err != nil {
-			server.logg.Error("set deadline error: " + err.Error())
+			server.logg.Error("socket set deadline error: ", err, " / ", sock.RemoteAddr())
 			return
 		}
 
 		packet = packet[:bytesRead]
 		if len(packet) < 12 || len(packet) > 260 {
-			server.logg.Info("len packet exception : BadPacket")
+			server.logg.Debug("modbus exception: bad len packet / ", sock.RemoteAddr())
 			return
 		}
 
@@ -113,7 +111,7 @@ func (server *ModbusServer) handlerMB(sock net.Conn) {
 		startingAddress := binary.BigEndian.Uint16(packet[8:10])
 		quantity := binary.BigEndian.Uint16(packet[10:12])
 
-		response := &ModbusResponse{
+		response := &mbResponse{
 			transactionID: transactionID,
 			protocolID:    protocolID,
 			UnitID:        unitid,
@@ -123,11 +121,9 @@ func (server *ModbusServer) handlerMB(sock net.Conn) {
 		exception := Success
 		if unitid > 247 {
 			exception = SlaveDeviceFailure
-			server.logg.Info("unit id exception : SlaveDeviceFailure")
 		}
 		if _, ok := server.Devices[unitid]; !ok {
 			exception = SlaveDeviceFailure
-			server.logg.Info("unit id exception : SlaveDeviceFailure")
 		}
 
 		if exception == Success {
@@ -168,17 +164,19 @@ func (server *ModbusServer) handlerMB(sock net.Conn) {
 				exception = IllegalFunction
 			}
 		}
+
 		if exception != Success {
 			response.sendExeption(sock, exception)
-			//			server.logg.Debug("modbus send exception")
+			server.logg.Debug("modbus send exception: ", exception, " / ", sock.RemoteAddr())
 			continue
 		}
+
 		response.sendData(sock)
 	}
 }
 
 // sendExeption is create response with ModBus exception on error
-func (r *ModbusResponse) sendExeption(sock net.Conn, ex Exception) {
+func (r *mbResponse) sendExeption(sock net.Conn, ex Exception) {
 	bytes := make([]byte, 2)
 	rawBytes := []byte{}
 	binary.BigEndian.PutUint16(bytes, r.transactionID)
@@ -190,11 +188,11 @@ func (r *ModbusResponse) sendExeption(sock net.Conn, ex Exception) {
 	rawBytes = append(rawBytes, byte(r.UnitID))
 	rawBytes = append(rawBytes, (r.function | 0x80))
 	rawBytes = append(rawBytes, uint8(ex))
-	sock.Write(rawBytes)
+	_, _ = sock.Write(rawBytes)
 }
 
 // sendData is create response with ModBus data
-func (r *ModbusResponse) sendData(sock net.Conn) {
+func (r *mbResponse) sendData(sock net.Conn) {
 	bytes := make([]byte, 2)
 	rawBytes := []byte{}
 	binary.BigEndian.PutUint16(bytes, r.transactionID)
@@ -207,7 +205,7 @@ func (r *ModbusResponse) sendData(sock net.Conn) {
 	rawBytes = append(rawBytes, byte(r.UnitID))
 	rawBytes = append(rawBytes, r.function)
 	rawBytes = append(rawBytes, r.Data...)
-	sock.Write(rawBytes)
+	_, _ = sock.Write(rawBytes)
 }
 
 // func (resp *ResponseMB)  WriteSingleCoil
@@ -216,7 +214,7 @@ func (r *ModbusResponse) sendData(sock net.Conn) {
 // func (resp *ResponseMB)  WriteHoldingRegisters
 
 // readCoils is read Coils data in ModBus Server & send response
-func (server *ModbusServer) readCoils(r *ModbusResponse, startAddress, quantity uint16) Exception {
+func (server *MBServer) readCoils(r *mbResponse, startAddress, quantity uint16) Exception {
 	bts := []byte{}
 	buff := []bool{}
 	var i uint16
@@ -246,7 +244,7 @@ func (server *ModbusServer) readCoils(r *ModbusResponse, startAddress, quantity 
 }
 
 // readDiscreteInputs is read Discrete inputs data in ModBus Server & send response
-func (server *ModbusServer) readDiscreteInputs(r *ModbusResponse, startAddress, quantity uint16) Exception {
+func (server *MBServer) readDiscreteInputs(r *mbResponse, startAddress, quantity uint16) Exception {
 	bts := []byte{}
 	buff := []bool{}
 	var i uint16
@@ -276,7 +274,7 @@ func (server *ModbusServer) readDiscreteInputs(r *ModbusResponse, startAddress, 
 }
 
 // readDiscreteInputs is read Holding registers data in ModBus Server & send response
-func (server *ModbusServer) readHoldingRegister(r *ModbusResponse, startAddress, quantity uint16) Exception {
+func (server *MBServer) readHoldingRegister(r *mbResponse, startAddress, quantity uint16) Exception {
 	register := make([]byte, 2)
 	buff := []byte{}
 	var i uint16
@@ -298,7 +296,7 @@ func (server *ModbusServer) readHoldingRegister(r *ModbusResponse, startAddress,
 }
 
 // readDiscreteInputs is read Input Registers data in ModBus Server & send response
-func (server *ModbusServer) readInputRegisters(r *ModbusResponse, startAddress, quantity uint16) Exception {
+func (server *MBServer) readInputRegisters(r *mbResponse, startAddress, quantity uint16) Exception {
 	register := make([]byte, 2)
 	buff := []byte{}
 	var i uint16
@@ -319,22 +317,22 @@ func (server *ModbusServer) readInputRegisters(r *ModbusResponse, startAddress, 
 	return Success
 }
 
-func (server *ModbusServer) WriteCoils(unitid UnitID, address uint16, value bool) {
+func (server *MBServer) WriteCoils(unitid UnitID, address uint16, value bool) {
 	server.Devices[unitid].RWCoils.Lock()
 	defer server.Devices[unitid].RWCoils.Unlock()
 	server.Devices[unitid].Coils[address] = value
 }
-func (server *ModbusServer) WriteDiscreteInputs(unitid UnitID, address uint16, value bool) {
+func (server *MBServer) WriteDiscreteInputs(unitid UnitID, address uint16, value bool) {
 	server.Devices[unitid].RWDiscreteInputs.Lock()
 	defer server.Devices[unitid].RWDiscreteInputs.Unlock()
 	server.Devices[unitid].DiscreteInputs[address] = value
 }
-func (server *ModbusServer) WriteHoldingRegisters(unitid UnitID, address, value uint16) {
+func (server *MBServer) WriteHoldingRegisters(unitid UnitID, address, value uint16) {
 	server.Devices[unitid].RWHoldingRegisters.Lock()
 	defer server.Devices[unitid].RWHoldingRegisters.Unlock()
 	server.Devices[unitid].HoldingRegisters[address] = value
 }
-func (server *ModbusServer) WriteInputRegisters(unitid UnitID, address, value uint16) {
+func (server *MBServer) WriteInputRegisters(unitid UnitID, address, value uint16) {
 	server.Devices[unitid].RWInputRegisters.Lock()
 	defer server.Devices[unitid].RWInputRegisters.Unlock()
 	server.Devices[unitid].InputRegisters[address] = value

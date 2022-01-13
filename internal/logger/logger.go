@@ -6,58 +6,35 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// Logger ...
-type Logger struct {
-	logger *logrus.Logger
-}
-
 // New ...
-func New(file, level string) *Logger {
+func New(file, level string) *logrus.Logger {
 	logg := logrus.New()
 
 	f, err := os.OpenFile(file, os.O_APPEND|os.O_CREATE|os.O_RDWR, 0666)
 	if err == nil {
 		logg.SetOutput(f)
 	} else {
-		logg.Info("failed to log to file, using default stderr: ", err)
+		logg.Error("failed to log to file, using default stderr: ", err)
 	}
 
 	lvl, err := logrus.ParseLevel(level)
 	if err == nil {
 		logg.SetLevel(lvl)
 	} else {
-		logg.Info("failed parse level logger: ", err)
+		logg.Error("failed parse level logger: ", err)
 		logg.SetLevel(logrus.DebugLevel)
 	}
 
 	logg.SetFormatter(&logrus.TextFormatter{
-		FullTimestamp:   true,
-		TimestampFormat: "01/02 15:04:05",
-		DisableColors:   true,
-		//		PadLevelText:    true,
-		DisableSorting: true,
+		FullTimestamp:          true,
+		TimestampFormat:        "01/02 15:04:05",
+		DisableColors:          true,
+		DisableLevelTruncation: false,
+		PadLevelText:           true,
+		DisableSorting:         true,
 	})
 
-	logg.Debug("start log")
-	return &Logger{logger: logg}
-}
+	logg.Debug("start logger")
 
-// Info ...
-func (l Logger) Info(msg string) {
-	l.logger.Info(msg)
-}
-
-// Error ...
-func (l Logger) Error(msg string) {
-	l.logger.Error(msg)
-}
-
-// Warn ...
-func (l Logger) Warn(msg string) {
-	l.logger.Warn(msg)
-}
-
-// Debug ...
-func (l Logger) Debug(msg string) {
-	l.logger.Debug(msg)
+	return logg
 }

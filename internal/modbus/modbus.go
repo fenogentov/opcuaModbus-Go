@@ -6,7 +6,7 @@ import (
 )
 
 type Exception uint8 // exception response Modbus
-type UnitID uint8    // address device Modbus
+type UnitID uint8    // id device Modbus
 
 const (
 	// coils
@@ -31,6 +31,23 @@ const (
 	SlaveDeviceFailure Exception = 0x04
 )
 
+func (excp Exception) String() string {
+	switch excp {
+	case 0x00:
+		return "Success"
+	case 0x01:
+		return "IllegalFunction"
+	case 0x02:
+		return "IllegalDataAddress"
+	case 0x03:
+		return "IllegalDataValue"
+	case 0x04:
+		return "SlaveDeviceFailure"
+	default:
+		return ""
+	}
+}
+
 // MBData is device ModBus registers data storage
 type MBData struct {
 	RWCoils            *sync.RWMutex
@@ -44,7 +61,7 @@ type MBData struct {
 }
 
 // ModbusResponse is structure for sending a Modbus response
-type ModbusResponse struct {
+type mbResponse struct {
 	transactionID uint16
 	protocolID    uint16
 	lenght        uint16
@@ -53,7 +70,7 @@ type ModbusResponse struct {
 	Data          []byte
 }
 
-// stringToUint8 is converting name function ModBus to numeric uint8
+// StringToUint8 is converting name function ModBus to numeric uint8
 func StringToUint8(s string) uint8 {
 	s = strings.TrimSpace(s)
 	s = strings.ToLower(s)

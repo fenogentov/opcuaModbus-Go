@@ -5,26 +5,24 @@ import (
 	"encoding/csv"
 	"errors"
 	"fmt"
-	"opcuaModbus/internal/logger"
 	"opcuaModbus/internal/modbus"
-	"opcuaModbus/utilities"
 	"os"
 	"strconv"
-	"strings"
 
 	"github.com/gopcua/opcua"
 	"github.com/gopcua/opcua/monitor"
 	"github.com/gopcua/opcua/ua"
+	"github.com/sirupsen/logrus"
 )
 
 type Status int
 
 const (
-	Configured Status = iota + 1
-	ReadTags
-	ReadyOptions
-	Connected
-	Subscribed
+	Configured   Status = iota + 1 // Сконфигурирован
+	ReadTags                       // Теги прочитаны
+	ReadyOptions                   // Опции применены
+	Connected                      // Подключен
+	Subscribed                     // Подписано
 )
 
 // Tag is config for tags device
@@ -46,11 +44,11 @@ type Config struct {
 
 // DeviceOPCUA is client OPC UA
 type DeviceOPCUA struct {
-	Status   Status
-	Config   Config
-	Client   *opcua.Client
-	Options  []opcua.Option
-	client   *opcua.Client
+	Status  Status
+	Config  Config
+	Client  *opcua.Client
+	Options []opcua.Option
+	//	client   *opcua.Client
 	Monitor  *monitor.NodeMonitor
 	Subscrip *monitor.Subscription
 	Nodes    []string
@@ -60,16 +58,34 @@ type DeviceOPCUA struct {
 	FileTags string
 }
 
+func (s Status) String() string {
+	switch s {
+	case 1:
+		return "Configured"
+	case 2:
+		return "ReadTags"
+	case 3:
+		return "ReadyOptions"
+	case 4:
+		return "Connected"
+	case 5:
+		return "Subscribed"
+	default:
+		return ""
+	}
+}
+
 // ClientOptions is applying OPC UA Client connection configuration
-func (dvc *DeviceOPCUA) ClientOptions(ctx context.Context, logg *logger.Logger) error {
+func (dvc *DeviceOPCUA) ClientOptions(ctx context.Context, logg *logrus.Logger) error {
 	endpoints, err := opcua.GetEndpoints(ctx, dvc.Config.Endpoint)
 	if err != nil {
-		return fmt.Errorf("error GetEndoints: %s", err)
+		return err
 	}
 
 	endpnt := opcua.SelectEndpoint(endpoints, dvc.Config.Policy, ua.MessageSecurityModeFromString(dvc.Config.Mode))
 	if endpnt == nil {
-		recordEnpointParam(endpoints)
+		//		recordEnpointParam(endpoints)
+		return fmt.Errorf("Policy Mode does not match Endpoint")
 	}
 
 	dvc.Options = append(dvc.Options, opcua.AutoReconnect(true))
@@ -99,64 +115,61 @@ func (dvc *DeviceOPCUA) ClientOptions(ctx context.Context, logg *logger.Logger) 
 	return nil
 }
 
-func recordEnpointParam(endpoints []*ua.EndpointDescription) {
-	enp := getOptions(endpoints)
-	fmt.Println(enp)
-}
+// func recordEnpointParam(endpoints []*ua.EndpointDescription) {
+// 	enp := getOptions(endpoints)
+// 	fmt.Println(enp)
+// }
 
 // getOptions getting configuration of connection to OPC UA Server
-func getOptions(endpoints []*ua.EndpointDescription) (out string) {
-	var policy, mode, auth []string
-	var user bool
-	for _, e := range endpoints {
-		p := strings.TrimPrefix(e.SecurityPolicyURI, "http://opcfoundation.org/UA/SecurityPolicy#")
-		if !utilities.FindFromSliceString(policy, p) {
-			policy = append(policy, p)
-		}
-		m := strings.TrimPrefix(e.SecurityMode.String(), "MessageSecurityMode")
-		if !utilities.FindFromSliceString(mode, m) {
-			mode = append(mode, m)
-		}
-		for _, t := range e.UserIdentityTokens {
-			token := strings.TrimPrefix(t.TokenType.String(), "UserTokenType")
-			if !utilities.FindFromSliceString(auth, token) {
-				auth = append(auth, token)
-				if token == "UserName" {
-					user = true
-				}
-			}
-		}
-	}
-	if len(policy) > 0 {
-		out = out + "#OPCUA Security Policy: " + strings.Join(policy, "/") + "\n"
-	}
-	if len(mode) > 0 {
-		out = out + "#OPCUA Security Mode: " + strings.Join(mode, "/") + "\n"
-	}
-	if len(auth) > 0 {
-		out = out + "#OPCUA Auth Mode: " + strings.Join(auth, "/") + "\n"
-	}
-	if user {
-		out = out + "#OPCUA UserName: \n#OPCUA Passord: "
-	}
+// func getOptions(endpoints []*ua.EndpointDescription) (out string) {
+// 	var policy, mode, auth []string
+// 	var user bool
+// 	for _, e := range endpoints {
+// 		p := strings.TrimPrefix(e.SecurityPolicyURI, "http://opcfoundation.org/UA/SecurityPolicy#")
+// 		if !utilities.FindFromSliceString(policy, p) {
+// 			policy = append(policy, p)
+// 		}
+// 		m := strings.TrimPrefix(e.SecurityMode.String(), "MessageSecurityMode")
+// 		if !utilities.FindFromSliceString(mode, m) {
+// 			mode = append(mode, m)
+// 		}
+// 		for _, t := range e.UserIdentityTokens {
+// 			token := strings.TrimPrefix(t.TokenType.String(), "UserTokenType")
+// 			if !utilities.FindFromSliceString(auth, token) {
+// 				auth = append(auth, token)
+// 				if token == "UserName" {
+// 					user = true
+// 				}
+// 			}
+// 		}
+// 	}
+// 	if len(policy) > 0 {
+// 		out = out + "#OPCUA Security Policy: " + strings.Join(policy, "/") + "\n"
+// 	}
+// 	if len(mode) > 0 {
+// 		out = out + "#OPCUA Security Mode: " + strings.Join(mode, "/") + "\n"
+// 	}
+// 	if len(auth) > 0 {
+// 		out = out + "#OPCUA Auth Mode: " + strings.Join(auth, "/") + "\n"
+// 	}
+// 	if user {
+// 		out = out + "#OPCUA UserName: \n#OPCUA Passord: "
+// 	}
 
-	return out
-}
+// 	return out
+// }
 
 // readTime is tests the connection and reads Server's Time
-func (dvc *DeviceOPCUA) ReadTime(ctx context.Context) {
+func (dvc *DeviceOPCUA) ReadTime(ctx context.Context) string {
 
 	vl, err := dvc.Client.Node(ua.NewNumericNodeID(0, 2258)).Value()
 	if err != nil {
-		fmt.Println("err : ", err)
-		return
+		return err.Error()
 	}
 	if vl != nil {
-		fmt.Printf("Server's time: %s\n", vl.Value())
-		dvc.Status = Connected
+		return fmt.Sprintf("Server's time: %s", vl.Value())
 	} else {
-		fmt.Print("v == nil")
-		dvc.Error = "Failed connect"
+		return "failed read time"
 	}
 }
 
@@ -195,7 +208,7 @@ func (dvc *DeviceOPCUA) ReadTagsTSV() error {
 		tags[name] = tg
 	}
 	if len(nodes) == 0 || len(tags) == 0 {
-		return errors.New("empty data tsv")
+		return errors.New("empty data " + dvc.FileTags)
 	}
 
 	dvc.Nodes = append(dvc.Nodes, nodes...)

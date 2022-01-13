@@ -15,13 +15,14 @@ import (
 
 	"github.com/gopcua/opcua"
 	"github.com/gopcua/opcua/monitor"
+	"github.com/sirupsen/logrus"
 
 	"net/http"
 	_ "net/http/pprof"
 )
 
 type serv struct {
-	MBServer     *modbus.ModbusServer
+	MBServer     *modbus.MBServer
 	OPCUAClients *clientopcua.DeviceOPCUA
 }
 
@@ -48,11 +49,13 @@ func main() {
 
 	go MBServer.Listen()
 
-	PLCs := []clientopcua.DeviceOPCUA{}
-
-	PLCs = readConfPlcs(config.Devices.Directory)
+	PLCs, err := readConfPlcs(config.Devices.Directory)
+	if err != nil {
+		logg.Error("error plc list: ", err)
+		return
+	}
 	if len(PLCs) < 1 {
-		logg.Error("plc list is empty")
+		logg.Error("error plc list: empty data")
 		return
 	}
 
@@ -60,8 +63,8 @@ func main() {
 		MBServer.AddDevice(PLCs[i].MBUnitID)
 	}
 
-	// запуск цикла мониторинга статуса клиентов opc ua
-	ticker := time.NewTicker(10 * time.Minute)
+	ticker := time.NewTicker(1 * time.Minute)
+
 	go func() {
 		for {
 			select {
@@ -71,38 +74,44 @@ func main() {
 
 			case <-ticker.C:
 				for i := range PLCs {
+
 					if PLCs[i].Status == clientopcua.Configured {
 						err := PLCs[i].ReadTagsTSV()
 						if err != nil {
-							PLCs[i].Error = err.Error()
+							PLCs[i].Error = "error read tsv"
+							logg.Debug(PLCs[i].Config.Endpoint, " error: ", err)
 						}
-						logg.Debug(PLCs[i].Config.Endpoint + " " + string(PLCs[i].Status))
+						logg.Debug(PLCs[i].Config.Endpoint, " status: ", PLCs[i].Status)
 					}
+
 					if PLCs[i].Status == clientopcua.ReadTags {
 						err := PLCs[i].ClientOptions(ctx, logg)
 						if err != nil {
 							PLCs[i].Error = "error options"
-							logg.Error(err.Error())
+							logg.Debug(PLCs[i].Config.Endpoint, " error: ", err)
 						}
-						logg.Debug(PLCs[i].Config.Endpoint + " " + string(PLCs[i].Status))
+						logg.Debug(PLCs[i].Config.Endpoint, " status: ", PLCs[i].Status)
 					}
+
 					if PLCs[i].Status == clientopcua.ReadyOptions {
 						client := opcua.NewClient(PLCs[i].Config.Endpoint, PLCs[i].Options...)
 						PLCs[i].Client = client
 						if err := PLCs[i].Client.Connect(ctx); err != nil {
 							PLCs[i].Error = "failed connect"
+							logg.Debug(PLCs[i].Config.Endpoint, " failed connect: ", err)
 							continue
 						}
 						defer PLCs[i].Client.Close()
 						PLCs[i].Status = clientopcua.Connected
-						logg.Debug(PLCs[i].Config.Endpoint + " " + string(PLCs[i].Status))
-						PLCs[i].ReadTime(ctx)
+						tm := PLCs[i].ReadTime(ctx)
+						logg.Debug(PLCs[i].Config.Endpoint, " status: ", PLCs[i].Status, " /", tm)
 					}
+
 					if PLCs[i].Status == clientopcua.Connected {
 						mntr, err := monitor.NewNodeMonitor(PLCs[i].Client)
 						PLCs[i].Monitor = mntr
 						if err != nil {
-							logg.Error("monitor: " + err.Error())
+							logg.Debug(PLCs[i].Config.Endpoint, " error: ", err)
 							continue
 						}
 
@@ -115,14 +124,14 @@ func main() {
 							MBServer:     MBServer,
 							OPCUAClients: &PLCs[i],
 						}
-						go startCallbackSub(ctx, Serv)
+						go startCallbackSub(ctx, logg, Serv)
 					}
 
+					logg.Debug(PLCs[i].Config.Endpoint, " status: ", PLCs[i].Status, " / error: ", PLCs[i].Error)
 					if PLCs[i].Subscrip != nil {
-						logg.Debug(PLCs[i].Config.Endpoint + " subscribed " + string(PLCs[i].Subscrip.Subscribed()) + "tags")
+						logg.Debug(PLCs[i].Config.Endpoint, " subscribed ", PLCs[i].Subscrip.Subscribed(), " tags")
 					}
-
-					logg.Debug(PLCs[i].Config.Endpoint + " status:" + string(PLCs[i].Status) + "/ error:" + PLCs[i].Error)
+					ticker.Reset(10 * time.Minute)
 				}
 			}
 		}
@@ -135,8 +144,14 @@ func main() {
 	<-ctx.Done()
 }
 
-func startCallbackSub(ctx context.Context, srvc *serv) {
+func startCallbackSub(ctx context.Context, logg *logrus.Logger, srvc *serv) {
 	if len(srvc.OPCUAClients.Nodes) < 1 {
+		srvc.OPCUAClients.Error = "empty Nodes"
+		logg.Debug(srvc.OPCUAClients.Config.Endpoint + " Nodes empty")
+		return
+	}
+
+	if srvc.OPCUAClients.Subscrip != nil {
 		return
 	}
 
@@ -150,32 +165,29 @@ func startCallbackSub(ctx context.Context, srvc *serv) {
 	srvc.OPCUAClients.Subscrip = sub
 
 	if err != nil {
-		srvc.OPCUAClients.Error = "Error Subscribe"
+		srvc.OPCUAClients.Subscrip = nil
+		srvc.OPCUAClients.Error = "error subscribe"
+		logg.Error(srvc.OPCUAClients.Config.Endpoint, " error: ", err)
 		return
-	} else {
-		go func() {
-			<-ctx.Done()
-			sub.Unsubscribe(ctx)
-			srvc.OPCUAClients.Status = clientopcua.ReadyOptions
-		}()
 	}
-	cnt := 0
+	go func() {
+		<-ctx.Done()
+		_ = sub.Unsubscribe(ctx)
+		srvc.OPCUAClients.Subscrip = nil
+		srvc.OPCUAClients.Status = clientopcua.ReadyOptions
+	}()
+
 	for i := 1; i < len(srvc.OPCUAClients.Nodes); i++ {
 		err = sub.AddNodes(srvc.OPCUAClients.Nodes[i])
 		if err != nil {
-			fmt.Printf("add: %+v | %s\n", srvc.OPCUAClients.Nodes[i], err)
+			logg.Error(srvc.OPCUAClients.Config.Endpoint, "/", srvc.OPCUAClients.Nodes[i], " error: ", err)
 		}
-		cnt++
 	}
 	srvc.OPCUAClients.Status = clientopcua.Subscribed
 	<-ctx.Done()
 }
 
 func (srv *serv) handlerOPCUA(s *monitor.Subscription, msg *monitor.DataChangeMessage) {
-	// if msg.DataValue.Status != ua.StatusOK {
-	// 	log.Printf("[callback] errorNodeID=%s, Status=%+v, val=%v\n", msg.NodeID, msg.DataValue, msg.Value)
-	// 	return
-	// }
 	unitid := srv.OPCUAClients.MBUnitID
 	tag := srv.OPCUAClients.Tags[msg.NodeID.String()]
 	val := msg.Value.Value()
@@ -211,7 +223,7 @@ func (srv *serv) handlerOPCUA(s *monitor.Subscription, msg *monitor.DataChangeMe
 	}
 }
 
-// toRegisters converting data to slice bytes
+// toRegisters is convert data to slice bytes
 func toRegisters(v interface{}) (regs []uint16) {
 	switch v := v.(type) {
 	case byte:
@@ -256,9 +268,3 @@ func toRegisters(v interface{}) (regs []uint16) {
 
 	return regs
 }
-
-// func clearString(s string) string {
-// 	s = strings.TrimSpace(s)
-// 	s = strings.ToLower(s)
-// 	return s
-// }
