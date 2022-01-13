@@ -86,6 +86,7 @@ func readConfPlcs(path string) (Plcs []clientopcua.DeviceOPCUA, err error) {
 
 		Plcs = append(Plcs, plc)
 	}
+
 	return Plcs, nil
 }
 
