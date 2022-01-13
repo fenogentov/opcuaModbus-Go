@@ -160,7 +160,7 @@ var tReadMBexcept = []struct {
 
 func TestStringToUint8(t *testing.T) {
 	for _, el := range tNameFuncMB {
-		out := FncToUint8(el.in)
+		out := StringToUint8(el.in)
 		if out != el.expect {
 			t.Errorf("%v. Input: \"%v\", want: %v, got: %v", el.msgErr, el.in, el.expect, out)
 		}

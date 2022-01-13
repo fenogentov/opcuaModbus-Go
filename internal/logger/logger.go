@@ -6,7 +6,7 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// New ...
+// New creates a new logger
 func New(file, level string) *logrus.Logger {
 	logg := logrus.New()
 

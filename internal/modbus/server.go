@@ -13,6 +13,7 @@ import (
 
 // MBServer ..
 type MBServer struct {
+	mu          *sync.RWMutex
 	host        string
 	Port        string
 	IdleTimeout time.Duration
@@ -29,6 +30,7 @@ func NewServer(logg *logrus.Logger, host string, port int) *MBServer {
 	prt := strconv.Itoa(port)
 
 	return &MBServer{
+		mu:          &sync.RWMutex{},
 		host:        host,
 		Port:        prt,
 		IdleTimeout: 30 * time.Second,
@@ -39,6 +41,8 @@ func NewServer(logg *logrus.Logger, host string, port int) *MBServer {
 
 // AddDevice adding a device with a given modbus address to the modbus server
 func (server *MBServer) AddDevice(id UnitID) {
+	server.mu.RLock()
+	defer server.mu.RUnlock()
 	if _, ok := server.Devices[id]; ok {
 		return
 	}
@@ -53,6 +57,17 @@ func (server *MBServer) AddDevice(id UnitID) {
 		InputRegisters:     map[uint16]uint16{},
 	}
 	server.logg.Info("modbus server add unit: ", id)
+}
+
+// DeletDevice deleting a device with a given modbus address to the modbus server
+func (server *MBServer) DeletDevice(id UnitID) {
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	if _, ok := server.Devices[id]; !ok {
+		return
+	}
+	delete(server.Devices, id)
+	server.logg.Info("modbus server delete unit: ", id)
 }
 
 // раскидать listen и accept
@@ -155,6 +170,7 @@ func (server *MBServer) handlerMB(sock net.Conn) {
 				}
 				exception = server.readInputRegisters(response, startingAddress, quantity)
 
+				// TODO
 			case WriteSingleCoil:
 			case WriteMultipleCoils:
 			case WriteSingleRegister:

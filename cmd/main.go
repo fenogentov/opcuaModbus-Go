@@ -124,6 +124,7 @@ func main() {
 							MBServer:     MBServer,
 							OPCUAClients: &PLCs[i],
 						}
+
 						go startCallbackSub(ctx, logg, Serv)
 					}
 
@@ -131,6 +132,7 @@ func main() {
 					if PLCs[i].Subscrip != nil {
 						logg.Debug(PLCs[i].Config.Endpoint, " subscribed ", PLCs[i].Subscrip.Subscribed(), " tags")
 					}
+
 					ticker.Reset(10 * time.Minute)
 				}
 			}
@@ -162,14 +164,13 @@ func startCallbackSub(ctx context.Context, logg *logrus.Logger, srvc *serv) {
 		},
 		srvc.handlerOPCUA,
 		srvc.OPCUAClients.Nodes[0])
-	srvc.OPCUAClients.Subscrip = sub
-
 	if err != nil {
 		srvc.OPCUAClients.Subscrip = nil
 		srvc.OPCUAClients.Error = "error subscribe"
 		logg.Error(srvc.OPCUAClients.Config.Endpoint, " error: ", err)
 		return
 	}
+	srvc.OPCUAClients.Subscrip = sub
 	go func() {
 		<-ctx.Done()
 		_ = sub.Unsubscribe(ctx)
@@ -183,7 +184,9 @@ func startCallbackSub(ctx context.Context, logg *logrus.Logger, srvc *serv) {
 			logg.Error(srvc.OPCUAClients.Config.Endpoint, "/", srvc.OPCUAClients.Nodes[i], " error: ", err)
 		}
 	}
+
 	srvc.OPCUAClients.Status = clientopcua.Subscribed
+
 	<-ctx.Done()
 }
 

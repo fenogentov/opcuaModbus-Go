@@ -31,23 +31,6 @@ const (
 	SlaveDeviceFailure Exception = 0x04
 )
 
-func (excp Exception) String() string {
-	switch excp {
-	case 0x00:
-		return "Success"
-	case 0x01:
-		return "IllegalFunction"
-	case 0x02:
-		return "IllegalDataAddress"
-	case 0x03:
-		return "IllegalDataValue"
-	case 0x04:
-		return "SlaveDeviceFailure"
-	default:
-		return ""
-	}
-}
-
 // MBData is device ModBus registers data storage
 type MBData struct {
 	RWCoils            *sync.RWMutex
@@ -85,5 +68,22 @@ func StringToUint8(s string) uint8 {
 		return 4
 	default:
 		return 0
+	}
+}
+
+func (excp Exception) String() string {
+	switch excp {
+	case 0x00:
+		return "Success"
+	case 0x01:
+		return "IllegalFunction"
+	case 0x02:
+		return "IllegalDataAddress"
+	case 0x03:
+		return "IllegalDataValue"
+	case 0x04:
+		return "SlaveDeviceFailure"
+	default:
+		return ""
 	}
 }
