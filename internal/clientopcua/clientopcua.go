@@ -15,6 +15,7 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// Status
 type Status int
 
 const (
@@ -168,9 +169,9 @@ func (dvc *DeviceOPCUA) ReadTime(ctx context.Context) string {
 	}
 	if vl != nil {
 		return fmt.Sprintf("Server's time: %s", vl.Value())
-	} else {
-		return "failed read time"
 	}
+
+	return "failed read time"
 }
 
 func (dvc *DeviceOPCUA) ReadTagsTSV() error {
