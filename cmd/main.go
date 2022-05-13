@@ -15,10 +15,8 @@ import (
 
 	"github.com/gopcua/opcua"
 	"github.com/gopcua/opcua/monitor"
+	"github.com/gopcua/opcua/stats"
 	"github.com/sirupsen/logrus"
-
-	"net/http"
-	_ "net/http/pprof"
 )
 
 type serv struct {
@@ -29,7 +27,7 @@ type serv struct {
 var configFile string
 
 func init() {
-	flag.StringVar(&configFile, "config", "./configs/config.toml", "path to configuration file")
+	flag.StringVar(&configFile, "config", "../configs/config.toml", "path to configuration file")
 }
 
 func main() {
@@ -63,8 +61,9 @@ func main() {
 		MBServer.AddDevice(PLCs[i].MBUnitID)
 	}
 
-	ticker := time.NewTicker(1 * time.Minute)
+	go mon(PLCs)
 
+	ticker := time.NewTicker(1 * time.Minute)
 	go func() {
 		for {
 			select {
@@ -74,7 +73,6 @@ func main() {
 
 			case <-ticker.C:
 				for i := range PLCs {
-
 					if PLCs[i].Status == clientopcua.Configured {
 						err := PLCs[i].ReadTagsTSV()
 						if err != nil {
@@ -96,6 +94,7 @@ func main() {
 					if PLCs[i].Status == clientopcua.ReadyOptions {
 						client := opcua.NewClient(PLCs[i].Config.Endpoint, PLCs[i].Options...)
 						PLCs[i].Client = client
+
 						if err := PLCs[i].Client.Connect(ctx); err != nil {
 							PLCs[i].Error = "failed connect"
 							logg.Debug(PLCs[i].Config.Endpoint, " failed connect: ", err)
@@ -133,17 +132,46 @@ func main() {
 						logg.Debug(PLCs[i].Config.Endpoint, " subscribed ", PLCs[i].Subscrip.Subscribed(), " tags")
 					}
 
-					ticker.Reset(10 * time.Minute)
+					ticker.Reset(1 * time.Minute)
 				}
 			}
 		}
 	}()
 
-	go func() {
-		log.Println(http.ListenAndServe("localhost:6060", nil))
-	}()
-
 	<-ctx.Done()
+}
+
+func mon(plcs []clientopcua.DeviceOPCUA) {
+	tic := time.NewTicker(1 * time.Minute)
+	for {
+		<-tic.C
+		for i, plc := range plcs {
+			if plc.Client != nil {
+				st := plc.Client.State()
+				fmt.Println(i, st)
+			}
+		}
+		// cl := stats.Client()
+		// er := stats.Error()
+		// sb := stats.Subscription()
+		// fmt.Printf("-client :    %+v\n", cl)
+		// fmt.Printf("-error  :    %+v\n", er)
+		// fmt.Printf("-subscr :    %+v\n", sb)
+	}
+}
+
+func mosub(sub *monitor.Subscription) {
+	tic := time.NewTicker(1 * time.Minute)
+	for {
+		<-tic.C
+		sb, _ := sub.Stats()
+
+		fmt.Printf("-sub :    %+v\n", sb)
+
+		stats.Reset()
+
+		//s *Subscription) Stats()
+	}
 }
 
 func startCallbackSub(ctx context.Context, logg *logrus.Logger, srvc *serv) {
@@ -170,6 +198,8 @@ func startCallbackSub(ctx context.Context, logg *logrus.Logger, srvc *serv) {
 		logg.Error(srvc.OPCUAClients.Config.Endpoint, " error: ", err)
 		return
 	}
+
+	go mosub(sub)
 	srvc.OPCUAClients.Subscrip = sub
 	go func() {
 		<-ctx.Done()

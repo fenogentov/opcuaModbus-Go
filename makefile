@@ -7,10 +7,9 @@ build:
 
 
 test:
-	go test -v -race ./... -count=10
+	go test -v -race ./... -count=10 -cover
 
 
 lint:
 	go vet -v ./...
 	golangci-lint run -v ./...
-	golint ./...

@@ -6,8 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"opcuaModbus/internal/modbus"
+	"opcuaModbus/utilities"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/gopcua/opcua"
 	"github.com/gopcua/opcua/monitor"
@@ -33,7 +35,7 @@ type Tag struct {
 	MBaddr   uint16
 }
 
-// Config is configuration of connection to OPC UA Server
+// Config is configuration of connection to OPCUA Server
 type Config struct {
 	Endpoint string
 	Policy   string
@@ -43,13 +45,12 @@ type Config struct {
 	Password string
 }
 
-// DeviceOPCUA is client OPC UA
+// DeviceOPCUA is client OPCUA
 type DeviceOPCUA struct {
-	Status  Status
-	Config  Config
-	Client  *opcua.Client
-	Options []opcua.Option
-	//	client   *opcua.Client
+	Status   Status
+	Config   Config
+	Client   *opcua.Client
+	Options  []opcua.Option
 	Monitor  *monitor.NodeMonitor
 	Subscrip *monitor.Subscription
 	Nodes    []string
@@ -76,7 +77,7 @@ func (s Status) String() string {
 	}
 }
 
-// ClientOptions is applying OPC UA Client connection configuration
+// ClientOptions is applying OPCUA Client connection configuration
 func (dvc *DeviceOPCUA) ClientOptions(ctx context.Context, logg *logrus.Logger) error {
 	endpoints, err := opcua.GetEndpoints(ctx, dvc.Config.Endpoint)
 	if err != nil {
@@ -116,49 +117,49 @@ func (dvc *DeviceOPCUA) ClientOptions(ctx context.Context, logg *logrus.Logger) 
 	return nil
 }
 
-// func recordEnpointParam(endpoints []*ua.EndpointDescription) {
-// 	enp := getOptions(endpoints)
-// 	fmt.Println(enp)
-// }
+func recordEnpointParam(endpoints []*ua.EndpointDescription) {
+	enp := getOptions(endpoints)
+	fmt.Println(enp)
+}
 
-// getOptions getting configuration of connection to OPC UA Server
-// func getOptions(endpoints []*ua.EndpointDescription) (out string) {
-// 	var policy, mode, auth []string
-// 	var user bool
-// 	for _, e := range endpoints {
-// 		p := strings.TrimPrefix(e.SecurityPolicyURI, "http://opcfoundation.org/UA/SecurityPolicy#")
-// 		if !utilities.FindFromSliceString(policy, p) {
-// 			policy = append(policy, p)
-// 		}
-// 		m := strings.TrimPrefix(e.SecurityMode.String(), "MessageSecurityMode")
-// 		if !utilities.FindFromSliceString(mode, m) {
-// 			mode = append(mode, m)
-// 		}
-// 		for _, t := range e.UserIdentityTokens {
-// 			token := strings.TrimPrefix(t.TokenType.String(), "UserTokenType")
-// 			if !utilities.FindFromSliceString(auth, token) {
-// 				auth = append(auth, token)
-// 				if token == "UserName" {
-// 					user = true
-// 				}
-// 			}
-// 		}
-// 	}
-// 	if len(policy) > 0 {
-// 		out = out + "#OPCUA Security Policy: " + strings.Join(policy, "/") + "\n"
-// 	}
-// 	if len(mode) > 0 {
-// 		out = out + "#OPCUA Security Mode: " + strings.Join(mode, "/") + "\n"
-// 	}
-// 	if len(auth) > 0 {
-// 		out = out + "#OPCUA Auth Mode: " + strings.Join(auth, "/") + "\n"
-// 	}
-// 	if user {
-// 		out = out + "#OPCUA UserName: \n#OPCUA Passord: "
-// 	}
+//getOptions getting configuration of connection to OPCUA Server
+func getOptions(endpoints []*ua.EndpointDescription) (out string) {
+	var policy, mode, auth []string
+	var user bool
+	for _, e := range endpoints {
+		p := strings.TrimPrefix(e.SecurityPolicyURI, "http://opcfoundation.org/UA/SecurityPolicy#")
+		if !utilities.FindFromSliceString(policy, p) {
+			policy = append(policy, p)
+		}
+		m := strings.TrimPrefix(e.SecurityMode.String(), "MessageSecurityMode")
+		if !utilities.FindFromSliceString(mode, m) {
+			mode = append(mode, m)
+		}
+		for _, t := range e.UserIdentityTokens {
+			token := strings.TrimPrefix(t.TokenType.String(), "UserTokenType")
+			if !utilities.FindFromSliceString(auth, token) {
+				auth = append(auth, token)
+				if token == "UserName" {
+					user = true
+				}
+			}
+		}
+	}
+	if len(policy) > 0 {
+		out = out + "#OPCUA Security Policy: " + strings.Join(policy, "/") + "\n"
+	}
+	if len(mode) > 0 {
+		out = out + "#OPCUA Security Mode: " + strings.Join(mode, "/") + "\n"
+	}
+	if len(auth) > 0 {
+		out = out + "#OPCUA Auth Mode: " + strings.Join(auth, "/") + "\n"
+	}
+	if user {
+		out = out + "#OPCUA UserName: \n#OPCUA Passord: "
+	}
 
-// 	return out
-// }
+	return out
+}
 
 // readTime is tests the connection and reads Server's Time
 func (dvc *DeviceOPCUA) ReadTime(ctx context.Context) string {

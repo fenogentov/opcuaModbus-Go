@@ -22,7 +22,7 @@ type MBServer struct {
 	logg        *logrus.Logger
 }
 
-// NewServer creating a new modbus server
+// NewServer creating a new modbus server.
 func NewServer(logg *logrus.Logger, host string, port int) *MBServer {
 	if host == "" {
 		host = "0.0.0.0"
@@ -39,7 +39,7 @@ func NewServer(logg *logrus.Logger, host string, port int) *MBServer {
 	}
 }
 
-// AddDevice adding a device with a given modbus address to the modbus server
+// AddDevice adding a device with a given modbus address to the modbus server.
 func (server *MBServer) AddDevice(id UnitID) {
 	server.mu.RLock()
 	defer server.mu.RUnlock()
